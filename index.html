@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Food survey</title>
+<style>
+  :root { --ink:#1b1b1b; --muted:#666; --line:#e2e2e2; --bg:#fafafa; --card:#fff;
+          --yes:#1f7a3a; --no:#b3261e; --maybe:#8a6d00; --accent:#1f4fd1; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:var(--bg); color:var(--ink);
+    font:17px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width:560px; margin:0 auto; padding:20px 16px 120px; }
+  h1 { font-size:26px; margin:8px 0 6px; }
+  h2 { font-size:15px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
+       margin:28px 0 8px; }
+  p.lead { color:var(--muted); margin:0 0 20px; }
+  .names { display:grid; gap:14px; margin-top:24px; }
+  .name { font-size:24px; font-weight:600; padding:26px; border-radius:14px; border:1px solid var(--line);
+          background:var(--card); color:var(--ink); cursor:pointer; }
+  .name:active { background:#f0f0f0; }
+  .row { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px;
+         background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-bottom:8px; }
+  .food { flex:1 1 140px; font-weight:500; }
+  .opts { display:flex; gap:6px; }
+  .opt { min-width:64px; padding:10px 8px; font-size:15px; font-weight:600; border-radius:9px;
+         border:1px solid var(--line); background:#fff; color:var(--ink); cursor:pointer; }
+  .opt[aria-pressed="true"].y { background:var(--yes); border-color:var(--yes); color:#fff; }
+  .opt[aria-pressed="true"].n { background:var(--no); border-color:var(--no); color:#fff; }
+  .opt[aria-pressed="true"].m { background:var(--maybe); border-color:var(--maybe); color:#fff; }
+  .bar { position:fixed; left:0; right:0; bottom:0; background:rgba(255,255,255,.97); border-top:1px solid var(--line);
+         padding:12px 16px calc(12px + env(safe-area-inset-bottom)); }
+  .bar .in { max-width:560px; margin:0 auto; display:flex; gap:12px; align-items:center; }
+  .count { flex:1; color:var(--muted); font-size:15px; }
+  .done { padding:14px 22px; font-size:17px; font-weight:700; border-radius:11px; border:0;
+          background:var(--accent); color:#fff; cursor:pointer; }
+  .done[disabled] { opacity:.6; }
+  .back { background:none; border:0; color:var(--accent); font-size:16px; padding:0; cursor:pointer; }
+  .msg { padding:12px; border-radius:10px; background:#fdecea; color:var(--no); margin-top:12px; }
+  .thanks { text-align:center; padding-top:60px; }
+  .thanks .check { font-size:54px; color:var(--yes); }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <section id="pick">
+    <h1>Food survey</h1>
+    <p class="lead">Tap your name. Then answer Yes, No, or Maybe for each food.</p>
+    <div class="names">
+      <button class="name" data-boy="Carl">Carl</button>
+      <button class="name" data-boy="Adam">Adam</button>
+    </div>
+  </section>
+
+  <section id="survey" hidden>
+    <button class="back" id="back">&larr; Not you? Go back</button>
+    <h1 id="hello"></h1>
+    <p class="lead">Would you eat this? Skip anything you're not sure about.</p>
+    <div id="list"></div>
+    <div id="err" class="msg" hidden></div>
+  </section>
+
+  <section id="thanks" class="thanks" hidden>
+    <div class="check">&#10003;</div>
+    <h1>Thanks, <span id="tname"></span>!</h1>
+    <p class="lead">Your answers were sent. You can close this page.</p>
+    <button class="back" id="again">Change my answers</button>
+  </section>
+</main>
+
+<div class="bar" id="bar" hidden>
+  <div class="in">
+    <div class="count" id="count"></div>
+    <button class="done" id="done">Done</button>
+  </div>
+</div>
+
+<script>
+const FOODS = {
+  "Chicken": ["Grilled chicken strips","Breaded chicken tenders","Chicken nuggets","Rotisserie chicken","Chicken wings","Orange chicken"],
+  "Beef and pork": ["Steak","Hamburgers","Cheeseburgers","Hot dogs","Meatballs","Pork chops","Ham","Turkey"],
+  "Mexican": ["Beef tacos","Steak tacos","Chicken tacos","Burritos","Quesadillas","Nachos"],
+  "Pasta and pizza": ["Pizza","Plain spaghetti (butter or parmesan)","Spaghetti with sauce","Lasagna","Ravioli","Mac and cheese","Chicken alfredo"],
+  "Fish": ["Salmon","Fish sticks"],
+  "Sandwiches": ["Sub sandwich","Grilled cheese"],
+  "Breakfast for dinner": ["Pancakes","Waffles","French toast","Scrambled eggs","Bacon","Sausage","Breakfast burrito"],
+  "Sides": ["Rice","Fried rice","Mashed potatoes","French fries","Tater tots","Baked potato","Garlic bread"],
+  "Vegetables": ["Broccoli","Corn","Green beans","Carrots"],
+  "Fruit": ["Strawberries","Bananas","Watermelon","Apples","Grapes","Oranges","Pineapple","Blueberries"],
+  "Drinks and snacks": ["Chocolate milk","Yogurt","Cheese sticks"],
+  "Sauces and toppings": ["Shredded cheese","Ranch","Ketchup","Salsa","Sour cream","Teriyaki sauce","Honey mustard","Gravy","Alfredo sauce","Marinara"]
+};
+const ENDPOINT = "https://formsubmit.co/ajax/efa253731d4712a27f141731d9e656db";
+const TEST = new URLSearchParams(location.search).has("test");
+const ALL = Object.values(FOODS).flat();
+let boy = null, answers = {};
+
+const $ = id => document.getElementById(id);
+function show(id){ ["pick","survey","thanks"].forEach(s => $(s).hidden = s !== id); $("bar").hidden = id !== "survey"; window.scrollTo(0,0); }
+function key(){ return "foodsurvey:" + boy; }
+function save(){ try { localStorage.setItem(key(), JSON.stringify(answers)); } catch(e){} }
+function count(){ const n = ALL.filter(f => answers[f]).length; $("count").textContent = n + " of " + ALL.length + " answered"; }
+
+function render(){
+  const list = $("list"); list.innerHTML = "";
+  for (const [cat, foods] of Object.entries(FOODS)) {
+    const h = document.createElement("h2"); h.textContent = cat; list.appendChild(h);
+    for (const f of foods) {
+      const row = document.createElement("div"); row.className = "row";
+      const name = document.createElement("div"); name.className = "food"; name.textContent = f;
+      const opts = document.createElement("div"); opts.className = "opts";
+      for (const [label, cls] of [["Yes","y"],["No","n"],["Maybe","m"]]) {
+        const b = document.createElement("button"); b.className = "opt " + cls; b.textContent = label;
+        b.setAttribute("aria-pressed", answers[f] === label ? "true" : "false");
+        b.onclick = () => {
+          answers[f] = answers[f] === label ? undefined : label;
+          if (!answers[f]) delete answers[f];
+          opts.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", answers[f] === x.textContent ? "true" : "false"));
+          save(); count();
+        };
+        opts.appendChild(b);
+      }
+      row.appendChild(name); row.appendChild(opts); list.appendChild(row);
+    }
+  }
+  count();
+}
+
+document.querySelectorAll(".name").forEach(b => b.onclick = () => {
+  boy = b.dataset.boy;
+  try { answers = JSON.parse(localStorage.getItem(key()) || "{}"); } catch(e){ answers = {}; }
+  $("hello").textContent = "Hi " + boy;
+  $("err").hidden = true; render(); show("survey");
+});
+$("back").onclick = () => show("pick");
+$("again").onclick = () => { render(); show("survey"); };
+
+$("done").onclick = async () => {
+  const skipped = ALL.length - ALL.filter(f => answers[f]).length;
+  if (skipped > 0 && !confirm("You skipped " + skipped + " foods. Send anyway?")) return;
+  const btn = $("done"); btn.disabled = true; btn.textContent = "Sending...";
+  const when = new Date();
+  const lines = [];
+  for (const [cat, foods] of Object.entries(FOODS)) {
+    lines.push("== " + cat + " ==");
+    for (const f of foods) lines.push(f + ": " + (answers[f] || "(skipped)"));
+  }
+  const tag = TEST ? "[TEST] " : "";
+  const payload = {
+    _subject: tag + "Food survey: " + boy,
+    _template: "box",
+    _captcha: "false",
+    boy: boy,
+    test: TEST ? "yes" : "no",
+    submitted_at: when.toISOString(),
+    yes: ALL.filter(f => answers[f] === "Yes").join(", ") || "(none)",
+    no: ALL.filter(f => answers[f] === "No").join(", ") || "(none)",
+    maybe: ALL.filter(f => answers[f] === "Maybe").join(", ") || "(none)",
+    all_answers: lines.join("\n"),
+    answers_json: JSON.stringify({boy: boy, test: TEST, submitted_at: when.toISOString(), answers: answers})
+  };
+  try {
+    const r = await fetch(ENDPOINT, { method:"POST", headers:{ "Content-Type":"application/json", "Accept":"application/json" }, body: JSON.stringify(payload) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || String(j.success) !== "true") throw new Error(j.message || ("HTTP " + r.status));
+    $("tname").textContent = boy; show("thanks");
+  } catch (e) {
+    $("err").textContent = "Sorry, that didn't send. Check your signal and tap Done again. (" + e.message + ")";
+    $("err").hidden = false;
+  } finally { btn.disabled = false; btn.textContent = "Done"; }
+};
+</script>
+</body>
+</html>
