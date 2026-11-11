@@ -92,7 +92,8 @@ const FOODS = {
   "Drinks and snacks": ["Chocolate milk","Yogurt","Cheese sticks"],
   "Sauces and toppings": ["Shredded cheese","Ranch","Ketchup","Salsa","Sour cream","Teriyaki sauce","Honey mustard","Gravy","Alfredo sauce","Marinara"]
 };
-const ENDPOINT = "https://formsubmit.co/ajax/efa253731d4712a27f141731d9e656db";
+const ENDPOINT = "https://formsubmit.co/ajax/efa253731d4712a27f141731d9e656db"; // email backup
+const SHEET_ENDPOINT = "https://script.google.com/macros/s/AKfycbyeR5KEtF4NPyj2IRZexZSuFoX5q5vmGVu_NpZeAV73tNW-NDHXXWemVxKe9YDsiAXS/exec";
 const TEST = new URLSearchParams(location.search).has("test");
 const ALL = Object.values(FOODS).flat();
 let boy = null, answers = {};
@@ -161,10 +162,15 @@ $("done").onclick = async () => {
     all_answers: lines.join("\n"),
     answers_json: JSON.stringify({boy: boy, test: TEST, submitted_at: when.toISOString(), answers: answers})
   };
+  const sheetBody = JSON.stringify({boy: boy, test: TEST, submitted_at: when.toISOString(), answers: answers});
+  const sheetPost = fetch(SHEET_ENDPOINT, { method:"POST", mode:"no-cors", headers:{ "Content-Type":"text/plain;charset=utf-8" }, body: sheetBody })
+    .then(() => true, () => false);
+  const emailPost = fetch(ENDPOINT, { method:"POST", headers:{ "Content-Type":"application/json", "Accept":"application/json" }, body: JSON.stringify(payload) })
+    .then(r => r.json().then(j => r.ok && String(j.success) === "true", () => false), () => false);
   try {
-    const r = await fetch(ENDPOINT, { method:"POST", headers:{ "Content-Type":"application/json", "Accept":"application/json" }, body: JSON.stringify(payload) });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || String(j.success) !== "true") throw new Error(j.message || ("HTTP " + r.status));
+    const sheetOk = await sheetPost;
+    const ok = sheetOk || await emailPost;
+    if (!ok) throw new Error("network error");
     $("tname").textContent = boy; show("thanks");
   } catch (e) {
     $("err").textContent = "Sorry, that didn't send. Check your signal and tap Done again. (" + e.message + ")";
